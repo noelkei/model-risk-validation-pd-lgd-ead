@@ -1,0 +1,14 @@
+numpy
+pandas
+scikit-learn
+matplotlib
+scipy
+statsmodels
+pyarrow
+lightgbm
+xgboost
+shap
+jupyter
+ipykernel
+tqdm
+kagglehub
