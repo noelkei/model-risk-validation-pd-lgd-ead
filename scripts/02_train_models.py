@@ -2,7 +2,6 @@
 import sys
 from pathlib import Path
 
-# Ensure project root is importable when running as a script.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -12,7 +11,7 @@ from src.data.clean import filter_closed_loans_and_target
 from src.data.features import add_credit_history_length
 from src.data.split import time_split
 
-from src.models.champion_logit import build_champion_pipeline, fit_champion, predict_pd
+from src.models.champion_logit import fit_champion, predict_pd
 from src.validation.metrics import performance_report
 from src.validation.calibration import calibration_slope_intercept
 
@@ -31,12 +30,16 @@ def main():
     train, oot = time_split(df)
 
     # 5) Train champion
-    pipe = build_champion_pipeline()
-    pipe = fit_champion(pipe, train)
+    pipe, kept_num, kept_cat, dropped = fit_champion(train)
+
+    # Report dropped features due to missingness policy (evidence of data quality governance)
+    print("\n=== MISSINGNESS POLICY (TRAIN) ===")
+    print("Dropped numeric features:", dropped["dropped_num"])
+    print("Dropped categorical features:", dropped["dropped_cat"])
 
     # 6) Predict
-    pd_train = predict_pd(pipe, train)
-    pd_oot = predict_pd(pipe, oot)
+    pd_train = predict_pd(pipe, train, kept_num, kept_cat)
+    pd_oot = predict_pd(pipe, oot, kept_num, kept_cat)
 
     # 7) Reports
     rep_train = performance_report(train["default_flag"].values, pd_train)
