@@ -1,0 +1,320 @@
+% reports/Model_Validation_Report.tex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{microtype}
+
+% Text justification + better line breaks.
+% Why: report-style PDF looks cleaner and more professional.
+\setlength{\emergencystretch}{2em}
+\sloppy
+
+\title{Independent Model Validation Report:\\PD Model (Champion Logistic) with Challenger Benchmark (LightGBM)}
+\author{Noel P.}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\vspace{-0.6em}
+
+\section*{Executive Summary}
+\begin{itemize}[leftmargin=*, itemsep=0.35em]
+\item \textbf{Scope:} Independent validation of a probability-of-default (PD) model using LendingClub loan data, covering performance, calibration, out-of-time (OOT) generalization, drift monitoring (PSI/KS), sensitivity and stress testing, and a challenger benchmark.
+\item \textbf{Champion (logistic):} The champion shows reasonable OOT discrimination, but calibration degrades OOT, with predicted PD levels above the observed default rate, consistent with population and base-rate shift.
+\item \textbf{Drift:} PSI highlights material drift in key underwriting variables, especially revolving utilization (\texttt{revol\_util}), with additional drift in \texttt{application\_type} and \texttt{int\_rate}.
+\item \textbf{Robustness:} Sensitivity analysis shows highly stable ranking under small shocks (Spearman $\approx 1$), while \texttt{dti} is the most sensitivity-relevant driver among the tested variables.
+\item \textbf{Challenger (LightGBM):} The challenger improves OOT discrimination and calibration characteristics and shows lower score drift, supporting promotion as a redevelopment candidate subject to governance controls.
+\end{itemize}
+
+\section{Scope and Model Purpose}
+
+\subsection{Model Purpose}
+The validated model estimates a \textbf{Probability of Default (PD)} for unsecured consumer loans. PD is intended to support risk segmentation, portfolio monitoring, and (with appropriate calibration governance) downstream loss estimation and decision support.
+
+\subsection{Validation Scope}
+This validation covers the following components:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item \textbf{Reproducibility:} Replication of the ``bank'' champion specification (logistic regression) under a controlled feature policy.
+\item \textbf{Performance:} Discrimination metrics (AUC, KS, PR-AUC, top-decile capture) on Train and OOT.
+\item \textbf{Calibration:} Reliability curves and calibration-in-the-large / calibration slope diagnostics.
+\item \textbf{OOT validation:} Explicit time-based split with Train vs OOT comparison.
+\item \textbf{Drift monitoring:} PSI for inputs and score; two-sample KS on score distributions.
+\item \textbf{Sensitivity:} $\pm5\%$ and $\pm10\%$ shocks on key drivers, including ranking stability via Spearman correlation.
+\item \textbf{Stress testing:} Mild and severe macro-style overlays, with Expected Loss proxy (\(PD \times LGD \times EAD\)).
+\item \textbf{Challenger benchmark:} LightGBM challenger comparison plus interpretability (SHAP summary bar plot).
+\end{itemize}
+
+\section{Data, Target Definition, and Feature Governance}
+
+\subsection{Dataset}
+This report uses the LendingClub public loan dataset (Kaggle). The dataset contains borrower/application variables, origination dates, and loan outcomes (e.g., \texttt{loan\_status}), as well as some post-origination fields (e.g., recoveries, payment variables).
+
+\subsection{Time Split (OOT Design)}
+A true \textbf{out-of-time (OOT)} validation is implemented using \texttt{issue\_d} (loan origination date). In the current dataset version used for this project:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item \textbf{Train:} historical vintages up to 2017 (inclusive)
+\item \textbf{OOT:} 2018 vintage
+\end{itemize}
+This split is designed to simulate realistic deployment conditions where the model is trained on past vintages and evaluated on a later population.
+
+\subsection{PD Target Definition}
+To avoid label contamination from unresolved loans, the PD target is defined only on \textbf{closed outcomes}:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item \texttt{default\_flag = 1}: \texttt{Charged Off} or \texttt{Default}
+\item \texttt{default\_flag = 0}: \texttt{Fully Paid}
+\item Excluded: \texttt{Current}, \texttt{Late}, \texttt{In Grace Period}, and other statuses with incomplete final outcome information
+\end{itemize}
+This is a standard validation choice when the goal is observed default discrimination/calibration on resolved loans.
+
+\subsection{Feature Policy and Leakage Prevention}
+Inputs are restricted to \textbf{underwriting-time variables} only. Post-outcome variables (payments, recoveries, outstanding balances, settlement-related columns, etc.) are excluded to prevent \textbf{data leakage}.
+
+Leakage control is implemented through:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item \textbf{Whitelist-based feature policy} for model inputs (pre-origination / underwriting variables only)
+\item \textbf{Automated diagnostic scan} for leakage candidate column names (e.g., payment, recovery, settlement, hardship patterns)
+\end{itemize}
+
+This governance design is important because strong performance driven by post-outcome variables would invalidate the model risk assessment.
+
+\section{Champion Model Reproduction (Logistic Regression)}
+
+\subsection{Champion Specification}
+The champion model is implemented as a \textbf{logistic regression pipeline} with explicit preprocessing:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item \textbf{Numeric features:} Train-based median imputation + standardization (improves optimizer convergence and coefficient stability)
+\item \textbf{Categorical features:} Imputation + one-hot encoding with unknown-category handling
+\item \textbf{Missingness governance:} Features with excessive missingness in Train are excluded based on a documented threshold policy
+\end{itemize}
+
+This setup replicates a realistic ``bank champion'' baseline while remaining auditable and reproducible.
+
+\subsection{Performance and Calibration Summary (Train vs OOT)}
+Table~\ref{tab:model_summary_train_oot} summarizes performance and calibration metrics for both the Champion and the Challenger across Train and OOT. The table is included here to anchor the report's quantitative conclusions.
+
+\begin{table}[H]
+\centering
+\caption{Performance and calibration summary (Train vs OOT).}
+\label{tab:model_summary_train_oot}
+\input{tables/model_summary_train_oot_table.tex}
+\end{table}
+
+\paragraph{Validation interpretation.}
+The champion maintains reasonable discrimination OOT, but calibration deteriorates (predicted mean PD above observed default rate, and weaker calibration slope/intercept). This pattern is consistent with a shift in population characteristics and/or outcome prevalence between Train and OOT. At the same time, the summary table indicates that the challenger preserves stronger OOT performance and calibration characteristics, which motivates the dedicated challenger assessment in Section~6.
+
+\subsection{Champion Calibration Evidence}
+Reliability plots compare binned predicted PDs against observed default rates.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{figures/champion_reliability_train.png}
+\caption{Champion reliability curve (Train).}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.78\textwidth]{figures/champion_reliability_oot.png}
+\caption{Champion reliability curve (OOT).}
+\end{figure}
+
+\paragraph{Validation interpretation.}
+Train calibration is materially stronger than OOT calibration. In OOT, the reliability curve sits below the perfect-calibration line across most bins, indicating that predicted PDs are generally above observed default rates (i.e., conservative/over-predictive calibration). This supports a standard validator conclusion: the model continues to rank risk reasonably well, but probability calibration should be monitored and periodically recalibrated as portfolio conditions evolve.
+
+\section{OOT Validation and Drift Monitoring}
+
+\subsection{Score Distribution Shift}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/champion_score_hist_train_vs_oot.png}
+\caption{Champion score distribution shift (Train vs OOT).}
+\end{figure}
+
+The score distribution changes between Train and OOT, which is expected when portfolio composition and underwriting or macro conditions shift over time. Distribution shift does not automatically imply model failure, but it increases the importance of calibration and drift monitoring.
+
+\subsection{Population Stability Index (PSI)}
+PSI is used as the primary drift indicator for features and score distributions. Standard thresholds are applied:
+\begin{itemize}[leftmargin=*, itemsep=0.2em]
+\item \(\text{PSI} < 0.10\): stable (GREEN)
+\item \(0.10 \le \text{PSI} < 0.25\): moderate drift (AMBER)
+\item \(\text{PSI} \ge 0.25\): material drift (RED)
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/psi_top_drivers.png}
+\caption{Top PSI drift drivers (Champion inputs + score).}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Top PSI drift drivers (Champion inputs and score).}
+\label{tab:psi_top12}
+{\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.08}\input{tables/psi_table_part1.tex}}
+\end{table}
+
+\paragraph{Key drift finding.}
+The strongest drift is observed in \texttt{revol\_util} (material/RED), with additional drift in \texttt{application\_type} and \texttt{int\_rate}. These are plausible drift drivers from a credit-risk perspective (portfolio mix, pricing, utilization behavior, credit-cycle effects). The evidence supports ongoing drift monitoring and reinforces the calibration findings.
+
+\subsection{KS Score Shift (Train vs OOT)}
+In addition to PSI, a two-sample KS test is used on the champion score distribution to quantify Train--OOT score shift. The result indicates a visible but not extreme distribution change; given the large sample size, the p-value is less decision-relevant than the KS effect size itself. This diagnostic is used as supporting evidence alongside score PSI and OOT calibration.
+
+\clearpage
+\section{Sensitivity and Stress Testing}
+
+\subsection{Sensitivity Analysis}
+Sensitivity tests perturb key numeric drivers by \(\pm 5\%\) and \(\pm 10\%\) and assess:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item change in mean predicted PD
+\item change in PD tail (95th percentile)
+\item rank-order stability (Spearman correlation)
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Sensitivity analysis (OOT): PD shift and ranking stability under input shocks.}
+\label{tab:sensitivity}
+\input{tables/sensitivity_table_table.tex}
+\end{table}
+
+\paragraph{Key sensitivity finding.}
+Ranking remains highly stable under all tested shocks (Spearman approximately 1), indicating robust rank ordering. Among the tested variables, \texttt{dti} shows the largest impact on mean PD and tail PD, making it the most sensitivity-relevant driver in this analysis.
+
+\subsection{Stress Scenarios and Expected Loss Proxy}
+Two stylized scenarios are applied to OOT observations:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item \textbf{Mild recession:} lower income and higher DTI
+\item \textbf{Severe recession:} larger income reduction, larger DTI increase, and higher utilization (capped)
+\end{itemize}
+
+An Expected Loss proxy is computed as:
+\[
+EL_{\text{proxy}} = PD_{\text{pred}} \times LGD_{\text{avg}} \times EAD_{\text{proxy}}
+\]
+
+with:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item \(EAD_{\text{proxy}} \approx \texttt{funded\_amnt} - \texttt{total\_rec\_prncp}\) (if available), otherwise \(\texttt{funded\_amnt}\)
+\item \(LGD_{\text{proxy}} \approx \max\{0,\min(1,1-\texttt{recoveries}/EAD_{\text{proxy}})\}\) for defaulted loans
+\item \(LGD_{\text{avg}}\) as the empirical average of \(LGD_{\text{proxy}}\) over defaults (proxy-based, not a calibrated LGD model)
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Stress scenarios (OOT): PD and EL proxy shifts.}
+\label{tab:stress}
+\input{tables/stress_table_table.tex}
+\end{table}
+
+\paragraph{Key stress finding.}
+Both mean PD and tail PD increase monotonically from baseline to mild to severe stress, and the EL proxy rises accordingly. This is the expected qualitative behavior and supports the model's use in vulnerability analysis (with documented proxy limitations).
+
+\subsection{LGD Proxy Profile (Defaults Only)}
+\begin{table}[H]
+\centering
+\caption{LGD proxy by grade (defaults only): summary statistics.}
+\label{tab:lgd_by_grade}
+{\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.08}\input{tables/lgd_by_grade_part1.tex}}
+\end{table}
+
+\paragraph{Interpretation.}
+LGD proxy levels are high in this dataset, consistent with low recoveries in many charged-off unsecured consumer loans. This is useful for \emph{directional} stress and EL proxy analysis, but it should not be interpreted as a production-ready regulatory LGD model.
+
+\clearpage
+\section{Challenger Benchmark (LightGBM)}
+
+\subsection{Challenger Rationale}
+A LightGBM challenger is introduced to test whether a non-linear model improves:
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item OOT discrimination
+\item calibration characteristics
+\item score stability (lower score drift)
+\end{itemize}
+The challenger is trained using the same governance-approved feature set as the champion to preserve comparability and avoid unfair performance gains from different information sets.
+
+\subsection{OOT Champion vs Challenger Comparison}
+\begin{table}[H]
+\centering
+\caption{Out-of-time comparison: Champion vs Challenger.}
+\label{tab:oot_compare}
+\input{tables/oot_compare_champion_vs_challenger_table.tex}
+\end{table}
+
+\paragraph{Decision-relevant finding.}
+The challenger improves OOT discrimination (AUC / PR-AUC) and shows better calibration characteristics (slope closer to 1, less adverse calibration intercept) than the champion. This suggests an improvement that is not purely in-sample overfitting.
+
+\subsection{Score Stability Comparison}
+\begin{table}[H]
+\centering
+\caption{Score stability summary (Train to OOT).}
+\label{tab:score_stability_compare}
+{\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.08}\input{tables/score_stability_compare_part1.tex}}
+\end{table}
+
+\paragraph{Stability finding.}
+The challenger exhibits lower score drift (lower score PSI and lower KS score shift), which strengthens the redevelopment case from a model risk perspective.
+
+\subsection{Interpretability (SHAP)}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/challenger_shap_bar.png}
+\caption{Challenger interpretability (SHAP mean absolute contribution).}
+\end{figure}
+
+\paragraph{Sanity check.}
+Top challenger drivers align with credit intuition (e.g., rate, utilization, DTI, grade/term-related effects). No post-origination leakage-type variables appear among the major drivers, which supports feature governance compliance.
+
+\clearpage
+\section{Conclusion, Model Risk Rating, and Action Plan}
+
+\subsection{Proposed Model Risk Rating}
+\textbf{Proposed rating: Moderate Model Risk (Champion).}
+
+\paragraph{Rationale.}
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item The champion demonstrates \textbf{reasonable OOT discrimination}, so ranking value remains present.
+\item The champion shows \textbf{OOT calibration degradation}, with PD levels overpredicting the observed OOT default rate and weaker calibration slope/intercept.
+\item \textbf{Drift is material} in key inputs (notably \texttt{revol\_util}), consistent with a real population shift.
+\item Sensitivity results show \textbf{strong ranking robustness} under small perturbations, which mitigates operational fragility concerns.
+\end{itemize}
+
+This combination supports a \textbf{Moderate} rating rather than Low (calibration + drift issues present) or High (discrimination remains acceptable and behavior under stress/sensitivity is coherent).
+
+\subsection{Recommended Remediation and Monitoring Plan}
+\begin{enumerate}[leftmargin=*, itemsep=0.35em]
+\item \textbf{Drift monitoring (monthly/quarterly):}\\
+Track PSI for key drivers (\texttt{revol\_util}, \texttt{application\_type}, \texttt{int\_rate}) and score (\texttt{pd\_pred}); investigate AMBER/RED threshold breaches.
+
+\item \textbf{Calibration governance:}\\
+Monitor calibration-in-the-large and slope on recent vintages; apply periodic recalibration if predicted PD levels materially diverge from observed default rates.
+
+\item \textbf{Segment monitoring:}\\
+Monitor discrimination and calibration by key segments (e.g., loan term, high-volume purpose categories, grade groups), especially where OOT degradation is concentrated.
+
+\item \textbf{Challenger governance (if promoted):}\\
+Apply the same validation suite (performance, calibration, drift, sensitivity, stress) to the challenger in production monitoring, and maintain periodic interpretability review (SHAP/global importance) as part of governance documentation.
+
+\item \textbf{Documentation and limitations:}\\
+Explicitly document the proxy nature of EAD/LGD/EL calculations, stress assumptions, and the fact that the LGD/EAD module is intended for directional model-risk analysis rather than regulatory capital modeling.
+\end{enumerate}
+
+\vspace{0.4em}
+\noindent\textbf{Ownership Signals Delivered}
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+\item Reproduced the champion (``bank'') model end-to-end with controlled preprocessing and leakage governance.
+\item Performed independent OOT validation with explicit Train/OOT temporal split.
+\item Assessed discrimination, calibration, drift (PSI/KS), sensitivity, and stress behavior.
+\item Benchmarked a challenger model with interpretability and stability evidence.
+\item Extended the validation pack to PD--LGD--EAD proxy-based EL analysis to demonstrate full credit risk stack awareness.
+\end{itemize}
+
+\end{document}
