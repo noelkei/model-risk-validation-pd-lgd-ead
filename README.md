@@ -1,160 +1,285 @@
-# Independent Model Validation Pack (PD + Proxy LGD/EAD/EL)
+# Independent Model Validation Pack for Credit Risk (PD) with Proxy LGD/EAD/EL
 
-An end-to-end **independent model validation** project for **credit risk (PD)** with an extension to **proxy LGD/EAD/EL**, built on the **LendingClub** dataset.
+Reproducibility, out-of-time validation, calibration, drift monitoring, robustness testing, and challenger benchmarking for a credit risk PD model using LendingClub loan data.
 
-This repository is designed as a **Model Risk Validation** deliverable (not just a model training project). It reproduces a **champion PD model (logistic regression)**, performs **out-of-time (OOT) validation**, evaluates **calibration and drift**, runs **sensitivity/stress testing**, and benchmarks a **challenger (LightGBM)** with interpretability.
+This repository contains an end-to-end **independent model validation** project for a **Probability of Default (PD)** model, with an extension to **proxy LGD/EAD/Expected Loss (EL)** for directional stress analysis.
 
----
+The project is framed as a **model risk validation** exercise from a validator perspective, not as a pure model development project. The focus is on whether the model remains usable and governable under temporal change.
 
-## Project Objective
+## Quick access
 
-The goal is to produce an **Independent Model Validation Report** that demonstrates:
+If you want the final deliverable first, open the report directly:
 
-- independent validation of a **PD champion model** (logistic regression),
-- explicit **leakage control** (underwriting-time variables only),
-- **true OOT validation** with a temporal split,
-- assessment of **performance + calibration + drift**,
+- [Model Validation Report (PDF)](reports/Model_Validation_Report.pdf)
+
+## What this project does
+
+The validation pack covers:
+
+- **Champion PD model reproduction** using logistic regression
+- **Feature governance and leakage prevention** using underwriting-time variables only
+- **True out-of-time (OOT) validation** using a temporal split
+- **Performance assessment** (ranking and classification diagnostics)
+- **Calibration assessment** (reliability and calibration diagnostics)
+- **Drift and stability monitoring** (PSI and score distribution shift)
+- **Sensitivity analysis** with controlled input shocks
+- **Stress scenario analysis** with PD and EL proxy impact
+- **Challenger benchmark** using LightGBM with SHAP interpretability
+- **Report-ready outputs** (figures, CSV tables, LaTeX tables, final PDF report)
+
+## Project objective
+
+The goal is to produce an **Independent Model Validation Report** that clearly demonstrates:
+
+- independent validation of a **champion PD model** (logistic regression),
+- explicit **leakage control** (underwriting-time features only),
+- **OOT validation** with a time-based split,
+- evaluation of **performance, calibration, and drift**,
 - **sensitivity and stress testing**,
-- benchmark vs **challenger (LightGBM) + SHAP**,
-- and an extended **credit-risk stack view** via **PD × LGD × EAD proxies (EL proxy)**.
+- benchmark against a **challenger (LightGBM)** with interpretability evidence,
+- and an extended **PD × LGD × EAD proxy = EL proxy** view for directional portfolio risk analysis.
 
-The emphasis is on **model risk governance and validation discipline**, not only predictive accuracy.
-
----
-
-## Validation Scope (What This Covers)
-
-### Champion (PD)
-- Logistic regression pipeline (auditable / reproducible baseline)
-- Underwriting-only features (leakage prevention)
-- Train vs OOT evaluation
-
-### Validation Suite
-- Discrimination metrics (AUC, KS, PR-AUC, etc.)
-- Calibration diagnostics (reliability curves, calibration intercept/slope)
-- OOT degradation analysis
-- Drift monitoring:
-  - feature PSI
-  - score PSI
-  - score distribution shift (KS)
-
-### Robustness
-- Sensitivity analysis with input shocks (±5%, ±10%)
-- Stress scenarios (mild / severe)
-
-### Challenger
-- LightGBM benchmark with same feature set (fair comparability)
-- OOT comparison (performance / calibration / stability)
-- SHAP global interpretability (sanity check + governance support)
-
-### Proxy Loss Stack Extension
-- Proxy LGD (recoveries-based, defaults only)
-- Proxy EAD (funded amount / funded minus repaid principal, if available)
-- Expected Loss proxy: `PD_pred × LGD_avg × EAD_proxy`
-
-> **Important:** LGD/EAD/EL are **proxies for directional risk analysis**, not production-ready regulatory models.
-
----
+The final deliverable is intended to read like a validation report with governance conclusions and remediation recommendations, not a notebook-based model demo.
 
 ## Dataset
 
-**LendingClub Loan Data (Kaggle)**
+### Source
+- LendingClub Loan Data ([Kaggle](https://www.kaggle.com/datasets/adarshsng/lending-club-loan-data-csv))
 
-The project uses LendingClub public loan data because it supports:
-- **PD target definition** from `loan_status` (closed outcomes),
-- **LGD proxy** using `recoveries`,
-- **EAD proxy** using `funded_amnt` and optionally `total_rec_prncp`.
+This dataset supports:
 
-### Core fields used (depending on dataset version)
-- `issue_d`, `loan_status`
-- `funded_amnt`, `recoveries`, `total_rec_prncp` (if present)
-- borrower/application variables such as:
-  - `annual_inc`, `dti`, `int_rate`, `term`, `grade`, `emp_length`
-  - `home_ownership`, `purpose`, `verification_status`
-  - `delinq_2yrs`, `inq_last_6mths`, `open_acc`, `total_acc`
-  - `revol_util`, `revol_bal`, `pub_rec`, `earliest_cr_line`
+- **PD target construction** from `loan_status`
+- **LGD proxy** using `recoveries`
+- **EAD proxy** using `funded_amnt` and, when available, `total_rec_prncp`
 
----
+It also includes many leakage-prone post-outcome variables, which makes it useful for demonstrating feature governance and leakage controls.
 
-## Methodology Summary
+### Typical fields used (depending on dataset version)
 
-## 1) Target Definition (PD)
-Only **closed outcomes** are used to avoid unresolved labels:
-- `default_flag = 1` for `Charged Off` / `Default`
-- `default_flag = 0` for `Fully Paid`
-- Exclude `Current`, `Late`, `In Grace Period`, etc.
+Core fields:
+- `issue_d`
+- `loan_status`
+- `funded_amnt`
+- `recoveries`
+- `total_rec_prncp` (if available)
 
-## 2) OOT Validation Design
-Temporal split using `issue_d`:
-- **Train:** historical vintages up to 2017
-- **OOT:** 2018 vintage
+Typical underwriting variables:
+- `annual_inc`
+- `dti`
+- `int_rate`
+- `term`
+- `grade` / `sub_grade`
+- `emp_length`
+- `home_ownership`
+- `purpose`
+- `verification_status`
+- `delinq_2yrs`
+- `inq_last_6mths`
+- `open_acc`
+- `total_acc`
+- `revol_util`
+- `revol_bal`
+- `pub_rec`
+- `earliest_cr_line`
 
-(Adjustable based on the available dataset range, preserving temporal holdout logic.)
+## Validation design and methodology
 
-## 3) Leakage Prevention (Feature Governance)
-Only **underwriting-time variables** are allowed in the PD model.
+### 1) PD target definition (closed outcomes only)
 
-Excluded (post-origination / post-outcome) fields include patterns such as:
-- payments (`pymnt`, `last_pymnt`, `total_rec_`)
-- recoveries (`recover`)
-- outstanding principal (`out_prncp`)
-- collections, settlements, hardship-related fields, etc.
+To avoid unresolved labels and target contamination, the PD target is defined on **closed outcomes only**:
 
-Leakage control is a core part of the validation governance story.
+- `default_flag = 1` for:
+  - `Charged Off`
+  - `Default`
+- `default_flag = 0` for:
+  - `Fully Paid`
 
-## 4) Champion Model
-- Logistic Regression (champion)
-- Numeric preprocessing: median imputation + scaling
-- Categorical preprocessing: imputation + one-hot encoding (`handle_unknown`)
-- Missingness policy (drop very high-missing features)
+Excluded statuses include unresolved or intermediate states such as:
+- `Current`
+- `Late`
+- `In Grace Period`
+- other non-final outcomes
 
-## 5) Challenger Model
-- LightGBM
-- Same approved feature set as the champion (fair comparison)
-- Evaluated on OOT performance, calibration, and stability
-- Interpreted using SHAP (global feature importance bar plot)
+This supports observed default discrimination and calibration analysis on resolved loans.
 
----
+### 2) Out-of-time (OOT) validation design
 
-## Main Findings (Typical Outcome / Current Project Narrative)
+A true temporal holdout is implemented using `issue_d` (origination date):
 
-### Champion (Logistic Regression)
-- **Reasonable OOT discrimination** (still useful as a ranking model)
-- **Calibration degrades OOT**
-  - predicted PD tends to exceed observed OOT default rate
-  - calibration slope/intercept worsen vs Train
-- Interpreted as **population drift / base-rate shift**, not necessarily total model failure
+- **Train**: vintages up to **2017**
+- **OOT**: **2018** vintage
+
+This design is used instead of a random split in order to evaluate model behavior under temporal distribution change.
+
+### 3) Feature governance and leakage prevention
+
+A key requirement of the validation is proving that the models only use information available at underwriting time.
+
+#### Allowed features
+Only **underwriting-time variables** are used for the PD champion and challenger.
+
+#### Excluded leakage-prone variables
+Post-origination and post-outcome variables are excluded, including columns related to:
+- payments (`pymnt`, `last_pymnt`, `total_rec_...`)
+- recoveries (`recover...`)
+- outstanding principal (`out_prncp...`)
+- settlements
+- hardship
+- servicing and collection outcomes
+
+#### Controls implemented
+- whitelist-based feature policy for model inputs
+- automated leakage-candidate scan using column-name patterns
+
+This is a core part of the validation, since performance driven by post-outcome fields would invalidate the underwriting PD use case.
+
+### 4) Champion model reproduction (logistic regression)
+
+The champion is implemented as a reproducible **logistic regression pipeline** with explicit preprocessing:
+
+- numeric preprocessing:
+  - train-based median imputation
+  - standardization
+- categorical preprocessing:
+  - imputation
+  - one-hot encoding with unknown-category handling
+- missingness governance:
+  - features with high missingness are excluded under a documented threshold policy
+
+The aim is to reproduce a realistic, auditable bank-style baseline under validation constraints.
+
+### 5) Validation suite (performance, calibration, drift, robustness)
+
+The project includes a validation suite that goes beyond ranking metrics.
+
+#### Performance / discrimination
+Representative outputs include:
+- AUC / Gini-style summaries
+- KS-related summaries
+- PR-AUC and other ranking diagnostics (as exported in report artifacts)
+
+#### Calibration
+Calibration is treated as a first-class validation topic:
+- reliability curves (Train and OOT)
+- calibration diagnostics exported in summary tables
+- interpretation of OOT over-prediction / under-prediction behavior
+
+This matters because a model can remain useful for ranking while becoming miscalibrated out of time.
+
+#### Drift and stability
+Temporal stability is evaluated using:
+- **PSI by feature**
+- **PSI on predicted score / PD**
+- score distribution shift (KS-based diagnostic)
+
+This supports a monitoring-oriented interpretation with stable, moderate-drift, and material-drift thresholds.
+
+### 6) Sensitivity analysis and stress testing
+
+#### Sensitivity analysis
+Controlled perturbations are applied to selected key drivers (for example income, DTI, utilization-type variables depending on final feature availability):
+
+- `±5%`
+- `±10%`
+
+For each perturbation, the project evaluates:
+- change in mean predicted PD
+- change in tail PD (such as 95th percentile)
+- **Spearman rank correlation** versus the baseline ranking
+
+This separates probability-level sensitivity from rank-order robustness.
+
+#### Stress scenarios
+Stylized **mild** and **severe** scenarios are applied to OOT observations using directional shocks such as:
+- lower income
+- higher DTI
+- higher utilization (scenario dependent)
+
+The project evaluates:
+- PD shift (mean and tail)
+- **EL proxy shift** using PD, LGD proxy, and EAD proxy
+
+This provides a directional vulnerability analysis at portfolio level.
+
+### 7) Challenger benchmark (LightGBM + SHAP)
+
+A **LightGBM challenger** is trained using the **same governance-approved feature set** as the champion.
+
+The comparison is designed to answer a validation question:
+- does a more flexible model improve OOT performance, calibration, and stability without relying on suspicious behavior?
+
+The challenger is evaluated on:
+- OOT discrimination
+- calibration characteristics
+- score stability / drift
+- interpretability using SHAP (global bar plot)
+
+SHAP is used as a sanity check to verify that major drivers are plausible and consistent with the feature policy.
+
+### 8) Proxy LGD, EAD, and Expected Loss extension
+
+To extend the analysis beyond PD, the project includes a lightweight proxy loss-stack module.
+
+#### EAD proxy
+- preferred (if available): `funded_amnt - total_rec_prncp`
+- fallback: `funded_amnt`
+
+#### LGD proxy (defaults only)
+A recoveries-based proxy, clipped to the `[0, 1]` range.
+
+#### Expected Loss proxy
+Computed directionally as:
+
+`EL_proxy = PD_pred × LGD_avg × EAD_proxy`
+
+#### Important limitation
+This module is intended for:
+- directional stress and vulnerability analysis
+
+It is not intended as:
+- a production LGD/EAD framework
+- a regulatory capital model
+- an IFRS9 production implementation
+
+## Main findings (current project narrative)
+
+The exact values depend on the current dataset version and generated artifacts, but the report narrative is based on the following observed patterns.
+
+### Champion (logistic regression)
+- **Reasonable OOT discrimination**, so it remains useful as a ranking model
+- **OOT calibration deterioration**
+  - predicted PD tends to be above observed OOT default rate
+  - calibration diagnostics worsen versus Train
+- This is interpreted as **population drift and base-rate shift**, not immediate model failure
 
 ### Drift
-- PSI highlights **material drift** in key inputs, especially:
-  - `revol_util` (often RED / material drift)
-  - `application_type`, `int_rate` (moderate-to-high drift)
-- Consistent with changes in portfolio mix / policy / credit cycle
+- PSI identifies **material drift** in key underwriting variables, especially:
+  - `revol_util`
+- Additional drift appears in variables such as:
+  - `application_type`
+  - `int_rate`
+- These shifts are plausible in terms of portfolio mix, pricing, and credit-cycle conditions
 
 ### Sensitivity
-- Rank ordering remains very stable under ±5% / ±10% shocks
-  - Spearman correlation ~ 1
-- `dti` tends to be the most sensitivity-relevant tested driver
+- Ranking remains highly stable under tested shocks
+- Spearman rank correlation remains close to 1
+- `dti` appears as a key sensitivity-relevant variable in mean and tail PD impact
 
-### Stress + EL Proxy
-- Baseline < Mild < Severe in PD and EL proxy (monotonic increase)
-- LGD proxy tends to be high (low recoveries in unsecured charged-off consumer loans)
-- Useful as a **directional vulnerability analysis**, not regulatory LGD modeling
+### Stress and EL proxy
+- Baseline < Mild < Severe in both PD and EL proxy
+- The monotonic increase is qualitatively coherent and suitable for directional risk analysis
+- LGD proxy levels tend to be high, which is consistent with low recoveries on unsecured charged-off consumer loans
 
 ### Challenger (LightGBM)
-- Improves OOT discrimination (AUC / PR-AUC)
-- Improves OOT calibration characteristics
-- Often lower score drift / stronger stability metrics
-- SHAP drivers remain plausible and governance-consistent (no leakage-type variables)
+- Improved OOT performance and calibration characteristics
+- Lower score drift and stronger stability evidence
+- SHAP drivers are plausible and do not show leakage-type variables
 
-### Validation Conclusion
-- **Champion:** Moderate Model Risk  
-  (usable ranking model, but calibration governance + monitoring needed)
-- **Challenger:** credible promotion / redevelopment candidate, subject to governance controls
+### Validation conclusion in the report
+- **Champion**: Moderate Model Risk
+- **Challenger**: credible promotion / redevelopment candidate, subject to governance and monitoring controls
 
----
-
-## Repository Structure
+## Repository structure
 
 ```text
 .
@@ -174,8 +299,8 @@ Leakage control is a core part of the validation governance story.
 ├── reports
 │   ├── Model_Validation_Report.tex
 │   ├── Model_Validation_Report.pdf
-│   ├── figures
-│   └── tables
+│   ├── figures/
+│   └── tables/
 ├── scripts
 │   ├── 00_download_data_kagglehub.py
 │   ├── 01_make_dataset.py
@@ -193,15 +318,13 @@ Leakage control is a core part of the validation governance story.
     └── validation/
 ````
 
----
+## Pipeline overview (scripts)
 
-## Pipeline Overview (Scripts)
+### `scripts/00_download_data_kagglehub.py`
 
-## `00_download_data_kagglehub.py`
+Dataset download helper (if using the KaggleHub flow).
 
-Downloads the LendingClub dataset (if using KaggleHub flow).
-
-## `01_make_dataset.py`
+### `scripts/01_make_dataset.py`
 
 Builds the modeling dataset:
 
@@ -211,83 +334,81 @@ Builds the modeling dataset:
 * feature engineering
 * temporal split preparation
 
-## `02_train_models.py`
+### `scripts/02_train_models.py`
 
-Trains the **champion logistic regression** model and stores predictions/artifacts.
+Trains the **champion logistic regression** model and stores predictions / model artifacts.
 
-## `03_run_validation.py`
+### `scripts/03_run_validation.py`
 
-Runs the validation suite on champion predictions:
+Runs the validation suite on champion outputs:
 
-* performance
-* calibration
-* drift
-* sensitivity
-* stress
+* performance metrics
+* calibration diagnostics
+* drift and stability diagnostics
+* sensitivity analysis
+* stress analysis
 * proxy LGD/EAD/EL summaries
 
-## `04_run_challenger.py`
+### `scripts/04_run_challenger.py`
 
-Trains/evaluates the **LightGBM challenger** and generates challenger comparison outputs + SHAP artifacts.
+Trains and evaluates the **LightGBM challenger** and generates challenger comparison outputs and SHAP artifacts.
 
-## `05_generate_report_artifacts.py`
+### `scripts/05_generate_report_artifacts.py`
 
-Builds final report artifacts (CSV tables + figures), including:
+Generates report-ready artifacts such as:
 
-* model summary train/OOT
-* champion vs challenger OOT comparison
-* score stability comparison
+* performance and calibration summary tables (Train / OOT)
+* champion vs challenger OOT comparison table
+* score stability comparison table
 * PSI table
 * sensitivity table
 * stress table
-* LGD-by-grade summary
-* figures (reliability curves, score shift, PSI drivers, SHAP)
+* LGD-by-grade summary table
+* figures (reliability curves, score shift histogram, PSI drivers, SHAP bar plot)
 
-## `06_export_tables_to_latex.py`
+### `scripts/06_export_tables_to_latex.py`
 
-Converts report CSV tables into LaTeX table artifacts:
+Converts CSV tables into LaTeX table artifacts:
 
 * splits wide tables into parts (`*_part1.tex`, `*_part2.tex`, ...)
-* builds a wrapper (`*_table.tex`) that stacks parts vertically
-* supports clean inclusion in the main LaTeX report
+* generates wrapper files (`*_table.tex`) for clean inclusion in the main report
+* supports A4-friendly PDF layout without dropping columns
 
----
+## How to run (end to end)
 
-## How to Run (End-to-End)
+Assumes the Python environment is set up and the dataset is available in `data/raw/`.
 
-> Assumes Python environment is set up and the dataset is available in `data/raw/`.
-
-### 1) Build / clean dataset
+### 1) Build the dataset
 
 ```bash
 python scripts/01_make_dataset.py
 ```
 
-### 2) Train champion
+### 2) Train the champion model
 
 ```bash
 python scripts/02_train_models.py
 ```
 
-### 3) Run validation suite
+### 3) Run the validation suite
 
 ```bash
 python scripts/03_run_validation.py
 ```
 
-### 4) Train/evaluate challenger
+### 4) Train and evaluate the challenger
 
 ```bash
 python scripts/04_run_challenger.py
 ```
 
-### 5) Generate report artifacts (tables + figures)
+### 5) Generate report artifacts (CSV tables and figures)
 
 ```bash
 python scripts/05_generate_report_artifacts.py
 ```
 
-### 6) Export CSV tables to LaTeX wrappers/parts
+### 6) Export CSV tables to LaTeX wrappers and parts
 
 ```bash
 python scripts/06_export_tables_to_latex.py
@@ -300,9 +421,7 @@ cd reports
 latexmk -pdf -interaction=nonstopmode Model_Validation_Report.tex
 ```
 
----
-
-## Report Outputs
+## Generated report outputs
 
 ### Figures (`reports/figures`)
 
@@ -316,92 +435,50 @@ Typical outputs include:
 
 ### Tables (`reports/tables`)
 
-CSV + LaTeX wrappers/parts, e.g.:
+CSV outputs include:
 
-* `model_summary_train_oot.csv` + `model_summary_train_oot_table.tex`
-* `oot_compare_champion_vs_challenger.csv` + wrapper
-* `score_stability_compare.csv` + wrapper
-* `psi_table.csv` + wrapper
-* `sensitivity_table.csv` + wrapper
-* `stress_table.csv` + wrapper
-* `lgd_by_grade.csv` + wrapper
-
----
-
-## LaTeX Report Notes (Practical)
-
-The report uses a wrapper/parts approach for tables to avoid layout issues in A4:
-
-* wide tables are split into **index + up to 4 data columns per part**
-* parts are stacked vertically in a single logical table
-* **captions/labels live only in `Model_Validation_Report.tex`**
-* wrappers (`*_table.tex`) and parts (`*_partN.tex`) should not include `\caption` or `\label`
-
-This avoids common LaTeX issues such as:
-
-* nested table environments (`Not in outer par mode`)
-* duplicate labels
-* inconsistent table width handling
-
----
-
-## Model Risk Framing (Why This Project Is Different)
-
-This project is intentionally framed as an **independent validation exercise**, not just model development.
-
-It focuses on the question:
-
-> Is the model still usable and governable under temporal change?
-
-That is evaluated through:
-
-* **ranking / discrimination**
-* **calibration**
-* **drift / stability**
-* **robustness under sensitivity + stress**
-* **comparative challenger evidence**
-* **clear limitations documentation** (LGD/EAD/EL proxies)
-
----
+* `model_summary_train_oot.csv`
+* `oot_compare_champion_vs_challenger.csv`
+* `score_stability_compare.csv`
+* `psi_table.csv`
+* `sensitivity_table.csv`
+* `stress_table.csv`
+* `lgd_by_grade.csv`
 
 ## Limitations
 
-* **Dataset is public LendingClub data**, not a bank internal production dataset
-* PD target is based on **closed outcomes only**, which is appropriate for this validation setup but not equivalent to a production default observation framework
-* LGD/EAD/EL are **proxy-based** and intended for **directional analysis**
-* Stress scenarios are stylized and not linked to a formal macroeconomic forecasting framework
+* The dataset is a public LendingClub dataset, not internal production bank data
+* PD target construction uses **closed outcomes only**, which is appropriate for this validation setup but not a full production default-observation framework
+* LGD/EAD/EL are **proxy-based** and intended for directional analysis
+* Stress scenarios are stylized and not linked to a formal macro forecasting framework
+* Conclusions should be interpreted as a validation simulation with governance discipline, not as production approval
 
----
+## Monitoring and remediation themes (from the report)
 
-## Suggested Monitoring / Governance Actions (From Validation)
+The final report includes governance-oriented recommendations such as:
 
-* Track PSI (features + score) monthly/quarterly
-* Monitor calibration-in-the-large and calibration slope on recent vintages
-* Perform segmented monitoring (grade / term / purpose)
-* Define AMBER/RED escalation thresholds for drift
-* Recalibrate the champion periodically if OOT calibration degrades materially
-* If challenger is promoted, apply the same monitoring and interpretability governance
-
----
+* monitor PSI for key features and score on a monthly or quarterly basis
+* track calibration level and calibration slope on recent vintages
+* monitor key segments (for example grade, term, purpose) for localized degradation
+* define escalation thresholds for moderate and material drift
+* apply periodic recalibration if OOT calibration degrades materially
+* if the challenger is promoted, apply the same monitoring and interpretability standards
 
 ## Requirements
 
-Install dependencies from:
+Install project dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-You may also need LaTeX for report compilation:
+For report compilation, install a LaTeX distribution with:
 
+* `pdflatex`
 * `latexmk`
-* `pdflatex` (e.g., via TeX Live / MacTeX)
-
----
 
 ## Author
 
 **Noel P.**
 
-Independent validation project focused on **credit risk model validation (PD)** with **drift, calibration, robustness, and challenger governance**.
-
+Independent validation project focused on credit risk model validation with an emphasis on out-of-time generalization, calibration, drift monitoring, robustness, challenger governance, and reproducibility.
